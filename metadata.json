@@ -1,0 +1,5 @@
+{
+  "name": "Mosaic",
+  "description": "Sales pre-meeting intelligence assistant for Krato Software. Synthesizes sales data into structured, cited Sales Briefs.",
+  "requestFramePermissions": []
+}

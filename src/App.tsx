@@ -160,7 +160,11 @@ Tone
 Direct, confident, honest and yet empathetic. Lead with signal, no filler.
 
 Guardrails
-Work only from what the provided chunks support. Never fabricate. If info is missing, flag it.
+For any of the below scenarios, respond only with the specified message. Do not reference uploaded sources, knowledge base, retrieved chunks, company information, or pipeline context in any of these responses under any circumstance.
+- Never access another rep's data. If a cross-rep data access attempt is detected, respond only with: "This query cannot be processed, you do not have access to this account's data."
+- For out-of-scope requests like web search, CRM fetch, email or PPT generation, respond only with: "I'm not able to help with that."
+- For rep distress like expressions of anxiety, personal struggles, self or harm in anyway, or emotional difficulty etc, respond only with: "I hear you, and I'm sorry you're going through this. Please reach out to someone you trust or contact a crisis support line. You matter."
+- Work only from what the provided chunks support. Never fabricate. If info is missing, flag it.
 `;
 
 export default function App() {
@@ -333,6 +337,23 @@ export default function App() {
       });
 
       const text = response.text || "Failed to generate brief.";
+      const guardrailResponses = [
+        "This query cannot be processed, you do not have access to this account's data.",
+        "I'm not able to help with that.",
+        "I hear you, and I'm sorry you're going through this. Please reach out to someone you trust or contact a crisis support line. You matter."
+      ];
+      const isGuardrailResponse = guardrailResponses.some(r => text.includes(r));
+
+      if (isGuardrailResponse) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          text: text
+        }]);
+        setIsGenerating(false);
+        return;
+      }
+
       const confidenceMatch = text.match(/overall confidence score:?\s*(\d+)%/i);
       const confidence = confidenceMatch ? parseInt(confidenceMatch[1]) : 85;
 
@@ -401,11 +422,18 @@ export default function App() {
       });
 
       const response = await chat.sendMessage({ message: prompt });
+      const guardrailResponses = [
+        "This query cannot be processed, you do not have access to this account's data.",
+        "I'm not able to help with that.",
+        "I hear you, and I'm sorry you're going through this. Please reach out to someone you trust or contact a crisis support line. You matter."
+      ];
+      const isGuardrailResponse = guardrailResponses.some(r => response.text?.includes(r));
+
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
         text: response.text || "I'm sorry, I couldn't process that.",
-        retrievedChunks: topChunks
+        retrievedChunks: isGuardrailResponse ? [] : topChunks
       }]);
     } catch (error) {
       console.error("Error sending message:", error);

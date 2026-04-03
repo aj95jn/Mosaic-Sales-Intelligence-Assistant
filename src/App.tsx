@@ -177,6 +177,9 @@ export default function App() {
   const [selectedBrief, setSelectedBrief] = useState<SalesBrief | null>(null);
   const [selectedInsight, setSelectedInsight] = useState<Insight | null>(null);
   const [feedback, setFeedback] = useState({ rating: 0, text: '' });
+  const [showInfo, setShowInfo] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [showExitPrompt, setShowExitPrompt] = useState(false);
 
   const aiRef = useRef<GoogleGenAI | null>(null);
 
@@ -497,6 +500,28 @@ export default function App() {
     });
   };
 
+  const handleFeedbackSubmit = () => {
+    if (!feedback.rating && !feedback.text.trim()) return;
+    setFeedbackSubmitted(true);
+    setTimeout(() => setFeedbackSubmitted(false), 3000);
+    // Reset feedback state after submission if needed, or keep it
+    // setFeedback({ rating: 0, text: '' });
+  };
+
+  const handleExit = () => {
+    if (!feedbackSubmitted && (feedback.rating !== 0 || feedback.text.trim() !== '')) {
+      // If they started but didn't submit, or if we want to prompt if they haven't submitted anything at all
+      setShowExitPrompt(true);
+    } else if (!feedbackSubmitted && !selectedBrief) {
+      // If they haven't even generated a brief, maybe just let them exit
+      window.location.reload(); 
+    } else if (!feedbackSubmitted) {
+      setShowExitPrompt(true);
+    } else {
+      window.location.reload();
+    }
+  };
+
   const parseCitations = (text: string, retrievedChunks?: Chunk[]) => {
     // Regex to match [ID|CONFIDENCE: text]
     // We use a more robust regex that captures the citation parts
@@ -599,7 +624,11 @@ export default function App() {
             <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold">AM</div>
           </div>
           <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-400" />
+            <button 
+              onClick={handleExit}
+              className="w-3 h-3 rounded-full bg-red-400 hover:bg-red-500 transition-colors" 
+              title="Close Session"
+            />
             <div className="w-3 h-3 rounded-full bg-yellow-400" />
             <div className="w-3 h-3 rounded-full bg-green-400" />
           </div>
@@ -611,7 +640,47 @@ export default function App() {
         <aside className="w-72 border-r border-gray-200 bg-white flex flex-col shrink-0">
           <div className="p-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">Sources</h2>
-            <Info className="w-4 h-4 text-gray-400 cursor-help" />
+            <div className="relative">
+              <Info 
+                className="w-4 h-4 text-gray-400 cursor-help hover:text-gray-600 transition-colors" 
+                onMouseEnter={() => setShowInfo(true)}
+                onMouseLeave={() => setShowInfo(false)}
+                onClick={() => setShowInfo(!showInfo)}
+              />
+              {showInfo && (
+                <div className="absolute right-0 mt-2 z-50 w-64 bg-[#1A1A1A] text-white p-4 rounded-xl shadow-2xl text-[10px] space-y-3 border border-white/10 animate-in fade-in zoom-in duration-200 origin-top-right">
+                  <div>
+                    <p className="font-bold text-blue-400 uppercase tracking-widest mb-1.5">Accepted Formats</p>
+                    <p className="text-gray-300">PDF, DOCX, TXT, CSV, JSON</p>
+                  </div>
+                  <div className="pt-2 border-t border-white/10">
+                    <p className="font-bold text-red-400 uppercase tracking-widest mb-1.5">Mosaic Does Not Do</p>
+                    <ul className="space-y-1 text-gray-300">
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-red-400">•</span>
+                        <span>Live web search</span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-red-400">•</span>
+                        <span>CRM data pull</span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-red-400">•</span>
+                        <span>Email writing</span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-red-400">•</span>
+                        <span>Meeting scheduling</span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-red-400">•</span>
+                        <span>Creating/editing PPT/Files</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -789,46 +858,77 @@ export default function App() {
                   <p className="text-sm font-semibold mb-1">Sales Brief: {files[0]?.name.split('.')[0] || 'Account'}</p>
                   <p className="text-[10px] text-blue-600 font-medium">Generated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8 opacity-20">
+                <FileText className="w-12 h-12 mb-4" />
+                <p className="text-sm font-medium">No brief generated yet</p>
+              </div>
+            )}
+          </div>
 
-                <div className="space-y-3">
-                  <p className="text-xs font-bold text-gray-400 uppercase">Feedback</p>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setFeedback(f => ({ ...f, rating: 1 }))}
-                      className={`flex-1 py-2 rounded-lg border flex items-center justify-center gap-2 transition-all ${
-                        feedback.rating === 1 ? 'bg-green-50 border-green-200 text-green-600' : 'border-gray-200 text-gray-400 hover:bg-gray-50'
-                      }`}
-                    >
-                      <ThumbsUp className="w-4 h-4" />
-                      <span className="text-xs font-semibold">Helpful</span>
-                    </button>
-                    <button 
-                      onClick={() => setFeedback(f => ({ ...f, rating: -1 }))}
-                      className={`flex-1 py-2 rounded-lg border flex items-center justify-center gap-2 transition-all ${
-                        feedback.rating === -1 ? 'bg-red-50 border-red-200 text-red-600' : 'border-gray-200 text-gray-400 hover:bg-gray-50'
-                      }`}
-                    >
-                      <ThumbsDown className="w-4 h-4" />
-                      <span className="text-xs font-semibold">Poor</span>
-                    </button>
-                  </div>
-                  <textarea 
-                    value={feedback.text}
-                    onChange={(e) => setFeedback(f => ({ ...f, text: e.target.value }))}
-                    placeholder="Anything we missed, or didn't work out?"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 h-24 resize-none"
-                  />
-                  <button className="w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-200 transition-colors">
-                    Submit Feedback
+          {/* Feedback Section - Always visible at bottom */}
+          <div className="p-4 border-t border-gray-100 bg-white space-y-4">
+            <div className={`space-y-4 transition-opacity duration-300 ${!selectedBrief ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Feedback</p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setFeedback(f => ({ ...f, rating: 1 }))}
+                    disabled={!selectedBrief}
+                    className={`flex-1 py-2 rounded-lg border flex items-center justify-center gap-2 transition-all ${
+                      feedback.rating === 1 ? 'bg-green-50 border-green-200 text-green-600' : 'border-gray-200 text-gray-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <ThumbsUp className="w-4 h-4" />
+                    <span className="text-xs font-semibold">Helpful</span>
+                  </button>
+                  <button 
+                    onClick={() => setFeedback(f => ({ ...f, rating: -1 }))}
+                    disabled={!selectedBrief}
+                    className={`flex-1 py-2 rounded-lg border flex items-center justify-center gap-2 transition-all ${
+                      feedback.rating === -1 ? 'bg-red-50 border-red-200 text-red-600' : 'border-gray-200 text-gray-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <ThumbsDown className="w-4 h-4" />
+                    <span className="text-xs font-semibold">Poor</span>
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center space-y-3 opacity-40">
-                <FileText className="w-12 h-12 text-gray-300" />
-                <p className="text-sm font-medium text-gray-400 px-8">Generate a brief to see session details and provide feedback.</p>
+
+              <div className="h-[1px] bg-gray-100 w-full" />
+
+              <div className="flex gap-2 items-end">
+                <textarea 
+                  value={feedback.text}
+                  onChange={(e) => setFeedback(f => ({ ...f, text: e.target.value }))}
+                  disabled={!selectedBrief}
+                  placeholder="Anything we missed, or didn't work out?"
+                  className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 h-20 resize-none disabled:bg-gray-50"
+                />
+                <button 
+                  onClick={handleFeedbackSubmit}
+                  disabled={!selectedBrief || (!feedback.rating && !feedback.text.trim())}
+                  className="w-10 h-10 bg-[#1A1A1A] text-white rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-black transition-all shrink-0"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
               </div>
-            )}
+            </div>
+
+            <AnimatePresence>
+              {feedbackSubmitted && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="bg-green-50 border border-green-100 rounded-lg p-2 flex items-center gap-2"
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  <p className="text-[10px] font-medium text-green-700">Thanks for the feedback, this helps us improve.</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </aside>
       </main>
@@ -964,6 +1064,67 @@ export default function App() {
                     </div>
                   )}
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+        {showExitPrompt && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-8"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-8 space-y-6"
+            >
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold">Before you go...</h3>
+                <p className="text-sm text-gray-500">Your feedback helps Mosaic get smarter for your next meeting. Would you like to leave a quick rating?</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <button 
+                    onClick={() => {
+                      setFeedback(f => ({ ...f, rating: 1 }));
+                      handleFeedbackSubmit();
+                      setTimeout(() => window.location.reload(), 1000);
+                    }}
+                    className="flex-1 py-3 rounded-xl border border-gray-200 flex flex-col items-center gap-2 hover:bg-green-50 hover:border-green-200 transition-all group"
+                  >
+                    <ThumbsUp className="w-6 h-6 text-gray-300 group-hover:text-green-500" />
+                    <span className="text-xs font-bold text-gray-400 group-hover:text-green-600">Helpful</span>
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setFeedback(f => ({ ...f, rating: -1 }));
+                      handleFeedbackSubmit();
+                      setTimeout(() => window.location.reload(), 1000);
+                    }}
+                    className="flex-1 py-3 rounded-xl border border-gray-200 flex flex-col items-center gap-2 hover:bg-red-50 hover:border-red-200 transition-all group"
+                  >
+                    <ThumbsDown className="w-6 h-6 text-gray-300 group-hover:text-red-500" />
+                    <span className="text-xs font-bold text-gray-400 group-hover:text-red-600">Poor</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold text-gray-400 hover:bg-gray-50 transition-all"
+                >
+                  Skip & Exit
+                </button>
+                <button 
+                  onClick={() => setShowExitPrompt(false)}
+                  className="flex-1 py-3 rounded-xl bg-[#1A1A1A] text-white text-sm font-bold hover:bg-black transition-all"
+                >
+                  Stay
+                </button>
               </div>
             </motion.div>
           </motion.div>

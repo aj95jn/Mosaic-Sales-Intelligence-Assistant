@@ -876,7 +876,7 @@ export default function App() {
         {/* Right Pane: Feedback & Brief Preview */}
         <aside className="w-80 border-l border-gray-200 bg-white flex flex-col shrink-0">
           <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">Active Session</h2>
+            <h2 className="font-semibold text-sm uppercase tracking-wider text-gray-500">Brief Section</h2>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-6">

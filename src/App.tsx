@@ -139,16 +139,18 @@ You are Mosaic, a sales pre-meeting intelligence assistant for Account Executive
 Sources & Citations
 - You will be provided with a list of data chunks.
 - EVERY insight or claim you provide MUST be cited using the format: [ID|CONFIDENCE: text].
+- CRITICAL: The "text" part of the citation MUST be the actual claim or sentence itself. Wrap the entire claim in the brackets.
 - Example: [kb-Krato-Battle-Card-0|95: Krato Software is a workflow automation platform.]
-- DO NOT mention source names, file names, or chunk IDs directly in your plain text (e.g., don't say "According to document X"). Use ONLY the citation format.
+- The "text" inside the citation MUST match the wording in the source chunk as closely as possible to ensure highlighting works.
+- DO NOT mention source names, file names, or chunk IDs directly in your plain text. Use ONLY the citation format.
 
 Output Format for Sales Brief
-The output brief should have the below sections, in a total of 400-500 words: 
-- [KRATO FIT]: Where Krato addresses this prospect's pain.
-- [ACCOUNT SNAPSHOT]: Deal stage, urgency, stakeholders.
-- [INTENT SIGNALS]: Budget, objections, timeline. Include an overall confidence score for this section.
-- [COMMITMENTS & OPEN QUESTIONS]: Agreed actions.
-- [COMPETITIVE & INDUSTRY CONTEXT]: Competitors, industry pressures.
+The output brief should have the below sections, in a total of 400-500 words. Use markdown headers (e.g., # KRATO FIT) for each section: 
+- KRATO FIT: Where Krato addresses this prospect's pain.
+- ACCOUNT SNAPSHOT: Deal stage, urgency, stakeholders.
+- INTENT SIGNALS: Budget, objections, timeline. Include an overall confidence score for this section.
+- COMMITMENTS & OPEN QUESTIONS: Agreed actions.
+- COMPETITIVE & INDUSTRY CONTEXT: Competitors, industry pressures.
 
 Follow-up Questions
 - Be concise and direct.
@@ -174,11 +176,14 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showCitationView, setShowCitationView] = useState(false);
+  const [isViewingBrief, setIsViewingBrief] = useState(false);
   const [selectedBrief, setSelectedBrief] = useState<SalesBrief | null>(null);
+  const [citationViewBrief, setCitationViewBrief] = useState<SalesBrief | null>(null);
   const [selectedInsight, setSelectedInsight] = useState<Insight | null>(null);
   const [feedback, setFeedback] = useState({ rating: 0, text: '' });
   const [showInfo, setShowInfo] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
 
   const aiRef = useRef<GoogleGenAI | null>(null);
@@ -369,7 +374,7 @@ export default function App() {
       const newMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        text: "Brief generated successfully. Click below to view details and citations.",
+        text: "",
         brief: newBrief
       };
 
@@ -417,6 +422,7 @@ export default function App() {
         - Use the [ID|CONFIDENCE: text] format for every claim. 
         - DO NOT mention source names, file names, or chunk IDs directly in your plain text.
         - Be concise and direct.
+        - DO NOT use the Sales Brief format with subsections (e.g., KRATO FIT, ACCOUNT SNAPSHOT). Just provide a direct, conversational answer based on the sources.
       `;
 
       const chat = aiRef.current.chats.create({
@@ -487,45 +493,63 @@ export default function App() {
     const normalizedHighlight = highlight.trim().replace(/\s+/g, ' ');
     const escapedHighlight = normalizedHighlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
-    // Create a regex that allows for flexible whitespace
+    // Create a regex that allows for flexible whitespace and is more robust
     const flexibleRegex = escapedHighlight.split(' ').join('\\s+');
     
-    const parts = fullText.split(new RegExp(`(${flexibleRegex})`, 'gi'));
-    return parts.map((part, i) => {
-      // Check if this part matches the highlight (ignoring whitespace differences)
-      const isMatch = part.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedHighlight.toLowerCase();
-      return isMatch ? (
-        <mark key={i} className="bg-yellow-200 px-0.5 rounded font-bold text-black not-italic">{part}</mark>
-      ) : part;
-    });
-  };
-
-  const handleFeedbackSubmit = () => {
-    if (!feedback.rating && !feedback.text.trim()) return;
-    setFeedbackSubmitted(true);
-    setTimeout(() => setFeedbackSubmitted(false), 3000);
-    // Reset feedback state after submission if needed, or keep it
-    // setFeedback({ rating: 0, text: '' });
-  };
-
-  const handleExit = () => {
-    if (!feedbackSubmitted && (feedback.rating !== 0 || feedback.text.trim() !== '')) {
-      // If they started but didn't submit, or if we want to prompt if they haven't submitted anything at all
-      setShowExitPrompt(true);
-    } else if (!feedbackSubmitted && !selectedBrief) {
-      // If they haven't even generated a brief, maybe just let them exit
-      window.location.reload(); 
-    } else if (!feedbackSubmitted) {
-      setShowExitPrompt(true);
-    } else {
-      window.location.reload();
+    try {
+      const regex = new RegExp(`(${flexibleRegex})`, 'gi');
+      const parts = fullText.split(regex);
+      return parts.map((part, i) => {
+        // Check if this part matches the highlight (ignoring whitespace differences)
+        const isMatch = part.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedHighlight.toLowerCase();
+        return isMatch ? (
+          <mark key={i} className="bg-yellow-300 px-0.5 rounded font-bold text-black not-italic shadow-sm">{part}</mark>
+        ) : part;
+      });
+    } catch (e) {
+      return fullText;
     }
   };
 
-  const parseCitations = (text: string, retrievedChunks?: Chunk[]) => {
+  const handleFeedbackSubmit = (overrideRating?: number, overrideText?: string) => {
+    const rating = overrideRating !== undefined ? overrideRating : feedback.rating;
+    const text = overrideText !== undefined ? overrideText : feedback.text;
+    
+    if (!rating && !text.trim()) return;
+    
+    setFeedbackSubmitted(true);
+    setHasSubmitted(true);
+    setTimeout(() => setFeedbackSubmitted(false), 3000);
+    // Clear feedback state after submission
+    setFeedback({ rating: 0, text: '' });
+  };
+
+  const handleExit = () => {
+    // If no brief has been generated, just exit.
+    if (!selectedBrief) {
+      window.location.reload();
+      return;
+    }
+
+    // Check if user has already interacted with feedback (selected rating or typed text)
+    // or if they have already submitted feedback.
+    const hasInteracted = feedback.rating !== 0 || feedback.text.trim() !== '' || hasSubmitted;
+    
+    // If they have interacted, skip the prompt and exit directly.
+    if (hasInteracted) {
+      window.location.reload();
+    } else {
+      // Otherwise, show the exit prompt to encourage feedback.
+      setShowExitPrompt(true);
+    }
+  };
+
+  const parseCitations = (text: string, retrievedChunks?: Chunk[], sourceContext?: 'brief' | 'message') => {
+    // Pre-process text to convert [SECTION] to # SECTION if needed
+    let processedText = text.replace(/^\[(KRATO FIT|ACCOUNT SNAPSHOT|INTENT SIGNALS|COMMITMENTS & OPEN QUESTIONS|COMPETITIVE & INDUSTRY CONTEXT)\]/gm, '# $1');
+    
     // Regex to match [ID|CONFIDENCE: text]
-    // We use a more robust regex that captures the citation parts
-    const parts = text.split(/(\[[^\]]+?\|[^\]]+?:\s*[^\]]+?\])/g);
+    const parts = processedText.split(/(\[[^\]]+?\|[^\]]+?:\s*[^\]]+?\])/g);
     return parts.map((part, i) => {
       if (part.startsWith('[') && part.includes('|') && part.includes(':')) {
         const content = part.slice(1, -1);
@@ -540,7 +564,7 @@ export default function App() {
         const actualChunk = chunks.find(c => c.id === chunkId);
         if (!actualChunk) {
           console.warn(`Chunk not found: ${chunkId}`);
-          return part;
+          return highlightedText; // Return the text even if chunk not found
         }
 
         // Find index in retrieved chunks to assign a consistent color
@@ -563,11 +587,12 @@ export default function App() {
         return (
           <span 
             key={i} 
-            className="cursor-pointer transition-all hover:brightness-90 px-0.5 rounded font-medium"
+            className="cursor-pointer transition-all hover:brightness-90 px-1 rounded font-medium inline-block my-0.5"
             style={{ 
-              backgroundColor: `${color}33`, // 20% opacity
+              backgroundColor: `${color}44`, // 26% opacity for better visibility
               borderBottom: `2px solid ${color}`,
-              color: '#1A1A1A'
+              color: '#1A1A1A',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -583,13 +608,17 @@ export default function App() {
                 uploaderRole: actualChunk.uploaderRole
               });
               
-              // If it's a regular message, we need to set a "pseudo-brief" for the citation view
-              if (!selectedBrief || !selectedBrief.retrievedChunks.some(c => c.id === chunkId)) {
-                setSelectedBrief({
+              // If it's a message or we explicitly want to show this text as the context
+              if (sourceContext === 'message' || !selectedBrief || !selectedBrief.retrievedChunks.some(c => c.id === chunkId)) {
+                setCitationViewBrief({
                   content: text,
-                  overallConfidence: 100,
+                  overallConfidence: confidence, // Use the citation confidence for the "grounded response" view
                   retrievedChunks: retrievedChunks || [actualChunk]
                 });
+                setIsViewingBrief(sourceContext === 'brief');
+              } else {
+                setCitationViewBrief(selectedBrief);
+                setIsViewingBrief(true);
               }
               setShowCitationView(true);
             }}
@@ -757,10 +786,14 @@ export default function App() {
 
             {messages.map(msg => (
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-[#1A1A1A] text-white rounded-2xl rounded-tr-sm' : 'bg-gray-100 text-[#1A1A1A] rounded-2xl rounded-tl-sm'} p-4 shadow-sm`}>
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {msg.role === 'assistant' ? parseCitations(msg.text, msg.retrievedChunks) : msg.text}
-                  </div>
+                <div className="max-w-[85%] space-y-2">
+                  {msg.text && (
+                    <div className={`${msg.role === 'user' ? 'bg-[#1A1A1A] text-white rounded-2xl rounded-tr-sm' : 'bg-gray-100 text-[#1A1A1A] rounded-2xl rounded-tl-sm'} p-4 shadow-sm`}>
+                      <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {msg.role === 'assistant' ? parseCitations(msg.text, msg.retrievedChunks, 'message') : msg.text}
+                      </div>
+                    </div>
+                  )}
                   
                   {msg.brief && (
                     <motion.div 
@@ -769,6 +802,8 @@ export default function App() {
                       className="mt-4 bg-white border border-gray-200 rounded-xl p-4 shadow-md cursor-pointer hover:border-blue-300 transition-all"
                       onClick={() => {
                         setSelectedBrief(msg.brief!);
+                        setCitationViewBrief(msg.brief!);
+                        setIsViewingBrief(true);
                         setShowCitationView(true);
                       }}
                     >
@@ -856,7 +891,16 @@ export default function App() {
                     />
                   </div>
                   <p className="text-sm font-semibold mb-1">Sales Brief: {files[0]?.name.split('.')[0] || 'Account'}</p>
-                  <p className="text-[10px] text-blue-600 font-medium">Generated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-blue-600 font-medium">Generated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    <button 
+                      onClick={() => handleDownloadBrief()}
+                      className="p-1 hover:bg-blue-100 rounded text-blue-400 hover:text-blue-600 transition-colors"
+                      title="Download Brief"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -907,7 +951,7 @@ export default function App() {
                   className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs focus:outline-none focus:ring-1 focus:ring-gray-300 h-20 resize-none disabled:bg-gray-50"
                 />
                 <button 
-                  onClick={handleFeedbackSubmit}
+                  onClick={() => handleFeedbackSubmit()}
                   disabled={!selectedBrief || (!feedback.rating && !feedback.text.trim())}
                   className="w-10 h-10 bg-[#1A1A1A] text-white rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-black transition-all shrink-0"
                 >
@@ -935,7 +979,7 @@ export default function App() {
 
       {/* Citation View Overlay */}
       <AnimatePresence>
-        {showCitationView && selectedBrief && (
+        {showCitationView && citationViewBrief && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -951,22 +995,22 @@ export default function App() {
               <div className="h-16 border-b border-gray-200 flex items-center justify-between px-6 shrink-0 bg-gray-50">
                 <div className="flex items-center gap-4">
                   <h3 className="font-bold text-lg">
-                    {selectedBrief.content.includes('[KRATO FIT]') ? 'Sales Brief Analysis' : 'Insight Analysis'}
+                    {isViewingBrief ? 'Sales Brief Analysis' : 'Response Context'}
                   </h3>
                   <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                    selectedBrief.overallConfidence >= 70 ? 'bg-green-100 text-green-700' :
-                    selectedBrief.overallConfidence >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                    citationViewBrief.overallConfidence >= 70 ? 'bg-green-100 text-green-700' :
+                    citationViewBrief.overallConfidence >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
                   }`}>
-                    {selectedBrief.content.includes('[KRATO FIT]') ? `Overall Confidence: ${selectedBrief.overallConfidence}%` : 'Grounded Response'}
+                    {isViewingBrief ? `Overall Confidence: ${citationViewBrief.overallConfidence}%` : 'Grounded Answer'}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
-                    onClick={() => handleDownloadBrief()}
+                    onClick={() => handleDownloadBrief(citationViewBrief)}
                     className="flex items-center gap-2 px-4 py-2 bg-[#1A1A1A] text-white rounded-lg text-xs font-bold hover:bg-black transition-all"
                   >
                     <Download className="w-4 h-4" />
-                    {selectedBrief.content.includes('[KRATO FIT]') ? 'Download Brief' : 'Download Answer'}
+                    {isViewingBrief ? 'Download Brief' : 'Download Answer'}
                   </button>
                   <button 
                     onClick={() => setShowCitationView(false)}
@@ -978,11 +1022,24 @@ export default function App() {
               </div>
 
               <div className="flex-1 flex overflow-hidden">
-                {/* Left: Full Brief */}
+                {/* Left: Full Brief or Message */}
                 <div className="flex-1 overflow-y-auto p-8 border-r border-gray-200 bg-white">
-                  <div className="max-w-3xl mx-auto prose prose-sm">
-                    <div className="text-[#1A1A1A] leading-relaxed text-base whitespace-pre-wrap">
-                      {parseCitations(selectedBrief.content, selectedBrief.retrievedChunks)}
+                  <div className="max-w-3xl mx-auto">
+                    <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-100">
+                      <h1 className="text-3xl font-black text-[#1A1A1A] tracking-tight">
+                        {isViewingBrief ? 'Sales Brief' : 'Grounded Response'}
+                      </h1>
+                      <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest ${
+                        citationViewBrief.overallConfidence >= 70 ? 'bg-green-100 text-green-700' :
+                        citationViewBrief.overallConfidence >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {citationViewBrief.overallConfidence}% Confidence Score
+                      </div>
+                    </div>
+                    <div className="prose prose-slate prose-h1:text-3xl prose-h1:font-black prose-h1:text-[#1A1A1A] prose-h1:mt-10 prose-h1:mb-6 prose-h1:border-b prose-h1:pb-2 prose-p:text-gray-700 prose-p:leading-relaxed">
+                      <div className="text-[#1A1A1A] leading-relaxed text-base whitespace-pre-wrap">
+                        {parseCitations(citationViewBrief.content, citationViewBrief.retrievedChunks, isViewingBrief ? 'brief' : 'message')}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1007,10 +1064,23 @@ export default function App() {
 
                         <div>
                           <p className="text-sm font-bold mb-1">{selectedInsight.source}</p>
-                          <div className="flex items-center gap-2">
-                            <p className="text-[10px] text-gray-400 uppercase">Uploaded {selectedInsight.date}</p>
-                            <span className="text-[10px] text-gray-300">•</span>
-                            <p className="text-[10px] text-gray-400 uppercase">By {selectedInsight.uploader} ({selectedInsight.uploaderRole})</p>
+                          <div className="grid grid-cols-2 gap-y-2 pt-2 border-t border-gray-50">
+                            <div className="space-y-0.5">
+                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Source Type</p>
+                              <p className="text-[10px] font-medium text-gray-600">{selectedInsight.sourceType === 'Rep Upload' ? 'Rep Upload' : 'Shared Knowledge Base'}</p>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Date</p>
+                              <p className="text-[10px] font-medium text-gray-600">{selectedInsight.date}</p>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Uploader</p>
+                              <p className="text-[10px] font-medium text-gray-600">{selectedInsight.uploader || 'System'}</p>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Role</p>
+                              <p className="text-[10px] font-medium text-gray-600">{selectedInsight.uploaderRole || 'N/A'}</p>
+                            </div>
                           </div>
                         </div>
 
@@ -1026,15 +1096,15 @@ export default function App() {
                             return (
                               <div className="space-y-2">
                                 {prevChunk && (
-                                  <div className="bg-gray-100/50 rounded-lg p-3 border border-gray-100 opacity-60">
+                                  <div className="bg-gray-100/50 rounded-lg p-3 border border-gray-100 opacity-60 overflow-hidden">
                                     <p className="text-[10px] font-bold text-gray-400 mb-1">Previous Chunk</p>
-                                    <p className="text-[10px] text-gray-500 line-clamp-2 italic">"...{prevChunk.text}..."</p>
+                                    <p className="text-[10px] text-gray-500 line-clamp-2 italic break-words">"...{prevChunk.text}..."</p>
                                   </div>
                                 )}
                                 
-                                <div className="bg-blue-50/50 rounded-lg p-4 border border-blue-100 relative">
+                                <div className="bg-blue-50/50 rounded-lg p-4 border border-blue-100 relative overflow-hidden">
                                   <p className="text-[10px] font-bold text-blue-400 mb-1 uppercase">Selected Chunk</p>
-                                  <p className="text-xs text-gray-700 leading-relaxed italic">
+                                  <p className="text-xs text-gray-700 leading-relaxed italic break-words">
                                     "...{highlightText(selectedInsight.chunkText, selectedInsight.text)}..."
                                   </p>
                                   <div className={`absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold ${
@@ -1046,9 +1116,9 @@ export default function App() {
                                 </div>
 
                                 {nextChunk && (
-                                  <div className="bg-gray-100/50 rounded-lg p-3 border border-gray-100 opacity-60">
+                                  <div className="bg-gray-100/50 rounded-lg p-3 border border-gray-100 opacity-60 overflow-hidden">
                                     <p className="text-[10px] font-bold text-gray-400 mb-1">Next Chunk</p>
-                                    <p className="text-[10px] text-gray-500 line-clamp-2 italic">"...{nextChunk.text}..."</p>
+                                    <p className="text-[10px] text-gray-500 line-clamp-2 italic break-words">"...{nextChunk.text}..."</p>
                                   </div>
                                 )}
                               </div>
@@ -1089,8 +1159,7 @@ export default function App() {
                 <div className="flex gap-4">
                   <button 
                     onClick={() => {
-                      setFeedback(f => ({ ...f, rating: 1 }));
-                      handleFeedbackSubmit();
+                      handleFeedbackSubmit(1);
                       setTimeout(() => window.location.reload(), 1000);
                     }}
                     className="flex-1 py-3 rounded-xl border border-gray-200 flex flex-col items-center gap-2 hover:bg-green-50 hover:border-green-200 transition-all group"
@@ -1100,8 +1169,7 @@ export default function App() {
                   </button>
                   <button 
                     onClick={() => {
-                      setFeedback(f => ({ ...f, rating: -1 }));
-                      handleFeedbackSubmit();
+                      handleFeedbackSubmit(-1);
                       setTimeout(() => window.location.reload(), 1000);
                     }}
                     className="flex-1 py-3 rounded-xl border border-gray-200 flex flex-col items-center gap-2 hover:bg-red-50 hover:border-red-200 transition-all group"
